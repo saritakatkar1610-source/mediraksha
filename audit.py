@@ -30,10 +30,16 @@ def init_db():
             risk_level TEXT,
             language TEXT,
             file TEXT,
-            words_in_report INTEGER
+            words_in_report INTEGER,
+            lab_values TEXT DEFAULT '{}'
         )
     """
     )
+    try:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN lab_values TEXT DEFAULT '{}'")
+        conn.commit()
+    except Exception:
+        pass
     conn.commit()
     conn.close()
     logger.info("Audit database initialized at %s", DB_PATH)
@@ -43,7 +49,7 @@ def add_entry(entry: dict, max_audit: int = 100):
     """Insert audit entry, trim to max_audit most recent."""
     conn = _get_db()
     conn.execute(
-        "INSERT OR REPLACE INTO audit_log (id, timestamp, patient, report_type, diagnoses, risk_level, language, file, words_in_report) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO audit_log (id, timestamp, patient, report_type, diagnoses, risk_level, language, file, words_in_report, lab_values) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             entry["id"],
             entry["timestamp"],
@@ -54,6 +60,7 @@ def add_entry(entry: dict, max_audit: int = 100):
             entry.get("language"),
             entry.get("file"),
             entry.get("words_in_report"),
+            json.dumps(entry.get("lab_values", {})),
         ),
     )
     conn.execute(
@@ -78,8 +85,28 @@ def get_log():
     for row in rows:
         entry = dict(row)
         entry["diagnoses"] = json.loads(entry.get("diagnoses") or "[]")
+        entry["lab_values"] = json.loads(entry.get("lab_values") or "{}")
         result.append(entry)
     logger.info("Loaded %d audit entries", len(result))
+    return result
+
+
+def get_patient_history(patient_name):
+    """Fetch all previous records for a patient ordered oldest first."""
+    if not patient_name or patient_name.strip().lower() in ("unknown", "", "null", "none"):
+        return []
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT * FROM audit_log WHERE LOWER(TRIM(patient)) = LOWER(TRIM(?)) ORDER BY timestamp ASC",
+        (patient_name.strip(),),
+    ).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        entry = dict(row)
+        entry["diagnoses"] = json.loads(entry.get("diagnoses") or "[]")
+        entry["lab_values"] = json.loads(entry.get("lab_values") or "{}")
+        result.append(entry)
     return result
 
 
