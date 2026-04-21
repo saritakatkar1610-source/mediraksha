@@ -30,7 +30,17 @@ EMPTY_RESULT = {
         "follow_up":         "N/A",
         "metric1_label":     "N/A", "metric1_value": "N/A",
         "metric2_label":     "N/A", "metric2_value": "N/A",
-    }
+    },
+    "diagnosis_explanations": [],
+    "trend_analysis": {
+        "trend_summary": "No previous data available.",
+        "trend_status": "Stable",
+        "trend_insight": "",
+    },
+    "clinical_recommendations": [],
+    "patient_guidance": [],
+    "red_flags": [],
+    "disclaimer": "This is not a medical diagnosis. Please consult a qualified healthcare professional.",
 }
 
 def safe_str(v):
@@ -68,6 +78,12 @@ def sanitize_result(result):
     di_keys = ["name","hospital","qualifications","exam_date","relationship"]
     kh_keys = ["primary_diagnosis","risk_level","capacity_status","follow_up",
                "metric1_label","metric1_value","metric2_label","metric2_value"]
+    diagnosis_explanations = result.get("diagnosis_explanations", [])
+    if not isinstance(diagnosis_explanations, list):
+        diagnosis_explanations = []
+    trend_analysis = result.get("trend_analysis")
+    if not isinstance(trend_analysis, dict):
+        trend_analysis = dict(EMPTY_RESULT["trend_analysis"])
 
     return {
         "patient_info":      safe_dict(result.get("patient_info"), pi_keys),
@@ -84,6 +100,12 @@ def sanitize_result(result):
                              "Summary not available. Please try again.",
         "translated_summary":safe_str(result.get("translated_summary")) or "",
         "key_highlights":    safe_dict(result.get("key_highlights"), kh_keys),
+        "diagnosis_explanations": diagnosis_explanations,
+        "trend_analysis":    trend_analysis,
+        "clinical_recommendations": safe_list(result.get("clinical_recommendations")),
+        "patient_guidance":  safe_list(result.get("patient_guidance")),
+        "red_flags":         safe_list(result.get("red_flags")),
+        "disclaimer":        safe_str(result.get("disclaimer")) or EMPTY_RESULT["disclaimer"],
         # Preserve any extra translated fields
         **{k: safe_str(v) for k, v in result.items()
            if k.startswith("translated_") and k != "translated_summary"},

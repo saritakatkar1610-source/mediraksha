@@ -8,14 +8,17 @@ import requests
 from flask import jsonify, render_template, request, send_file, session
 
 from modules import audit
+from modules.clinical_reasoning import generate_diagnosis_explanations
 from modules.detection import detect_report_type
 from modules.extraction import extract_pdf_text
 from modules.pdf_generator import generate_pdf
 from modules.prompts import build_prompt
 from modules.providers import call_groq, groq_chat
+from modules.recommendations import generate_recommendations
 from modules.sanitizer import sanitize_result
+from modules.trend_analysis import analyze_patient_trends
 from modules.translation import translate_all_fields
-from modules.validation import post_process_result
+from modules.validation import extract_lab_value, post_process_result
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +79,37 @@ def register_routes(app):
 
             result = post_process_result(result, detected_type, report_text)
 
+            lab_values_for_storage = {}
+            tracked_params = [
+                "haemoglobin", "wbc", "platelets", "glucose", "hba1c",
+                "creatinine", "cholesterol", "tsh", "sgpt", "sgot",
+                "sodium", "potassium", "bilirubin_total", "ldl", "hdl", "triglycerides",
+            ]
+            lab_source = result.get("lab_results") or report_text
+            for param in tracked_params:
+                value, _ = extract_lab_value(lab_source, param)
+                if value is not None:
+                    lab_values_for_storage[param] = value
+
+            diagnoses_list = (result.get("diagnoses") or [])[:3]
+            if detected_type == "Lab Report":
+                result["diagnosis_explanations"] = generate_diagnosis_explanations(
+                    diagnoses_list,
+                    lab_source,
+                )
+            else:
+                result["diagnosis_explanations"] = []
+
+            patient_name = (result.get("patient_info") or {}).get("name") or "Unknown"
+            result["trend_analysis"] = analyze_patient_trends(patient_name, lab_values_for_storage)
+
+            risk = (result.get("key_highlights") or {}).get("risk_level", "Low")
+            rec_data = generate_recommendations(diagnoses_list, risk)
+            result["clinical_recommendations"] = rec_data["clinical_recommendations"]
+            result["patient_guidance"] = rec_data["patient_guidance"]
+            result["red_flags"] = rec_data["red_flags"]
+            result["disclaimer"] = rec_data["disclaimer"]
+
             if lang_code != "en":
                 translate_all_fields(provider, api_key, result, lang_name)
 
@@ -84,7 +118,7 @@ def register_routes(app):
             result["analyzed_at"] = datetime.now().strftime("%d %b %Y, %I:%M %p")
 
             patient_name = (result.get("patient_info") or {}).get("name") or "Unknown"
-            diagnoses = result.get("diagnoses") or []
+            diagnoses = diagnoses_list
             risk = (result.get("key_highlights") or {}).get("risk_level", "N/A")
             audit_entry = {
                 "id": report_id,
@@ -96,6 +130,7 @@ def register_routes(app):
                 "language": lang_name,
                 "file": filename_used,
                 "words_in_report": len(report_text.split()),
+                "lab_values": lab_values_for_storage,
             }
             audit.add_entry(audit_entry, max_audit=app.config["MAX_AUDIT"])
 

@@ -140,6 +140,32 @@ def generate_pdf(data, lang_name):
         sec("DIAGNOSIS")
         story.append(Paragraph("  ·  ".join(dx), diag))
 
+    dx_explanations = data.get("diagnosis_explanations") or []
+    if dx_explanations:
+        sec("CLINICAL REASONING")
+        for exp in dx_explanations:
+            if not isinstance(exp, dict):
+                continue
+            dx_name = exp.get("diagnosis", "")
+            confidence = exp.get("confidence", "")
+            reason = exp.get("reason", "")
+            if dx_name and reason:
+                story.append(Paragraph(
+                    f"<b>{dx_name}</b> (Confidence: {confidence})",
+                    ps("dx_exp_hdr", fontName="Helvetica-Bold", fontSize=9.5,
+                       textColor=colors.HexColor("#c0392b"), spaceAfter=2)
+                ))
+                story.append(Paragraph(reason, body))
+                story.append(Spacer(1, 2*mm))
+
+    trend = data.get("trend_analysis") or {}
+    trend_summary = trend.get("trend_summary", "")
+    if trend_summary and trend_summary != "No previous data available.":
+        sec("PATIENT TREND ANALYSIS")
+        fld("Status", trend.get("trend_status", ""))
+        fld("Trends", trend_summary)
+        bdy(trend.get("trend_insight", ""))
+
     sec("MEDICAL HISTORY & CLINICAL FINDINGS")
     bdy(data.get("medical_history"))
     if not empty(data.get("clinical_findings")):
@@ -164,6 +190,26 @@ def generate_pdf(data, lang_name):
     if not empty(data.get("recommendations")):
         sec("RECOMMENDATIONS / FOLLOW-UP")
         bdy(data.get("recommendations"))
+
+    clin_recs = data.get("clinical_recommendations") or []
+    if clin_recs:
+        sec("CLINICAL RECOMMENDATIONS")
+        for rec in clin_recs:
+            story.append(Paragraph(f"• {rec}", body))
+
+    pat_guide = data.get("patient_guidance") or []
+    if pat_guide:
+        sec("PATIENT GUIDANCE")
+        for guidance in pat_guide:
+            story.append(Paragraph(f"• {guidance}", body))
+
+    red_flags = data.get("red_flags") or []
+    if red_flags:
+        sec("⚠ RED FLAG ALERTS")
+        alert_style = ps("alert", fontName="Helvetica-Bold", fontSize=10,
+                         textColor=colors.HexColor("#c0392b"), leading=14, spaceAfter=4)
+        for flag in red_flags:
+            story.append(Paragraph(f"⚠ {flag}", alert_style))
 
     if not empty(data.get("prognosis")):
         sec("PROGNOSIS")
@@ -219,11 +265,12 @@ def generate_pdf(data, lang_name):
     story.append(Spacer(1, 8*mm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#ccc")))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph(
+    disclaimer_text = data.get("disclaimer") or (
         "DISCLAIMER: This AI-generated summary is for informational purposes only. "
         "It does not replace professional medical advice. "
-        "Always consult a qualified healthcare professional for medical decisions.",
-        foot))
+        "Always consult a qualified healthcare professional for medical decisions."
+    )
+    story.append(Paragraph(disclaimer_text, foot))
 
     doc.build(story)
     buf.seek(0)
